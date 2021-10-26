@@ -19,13 +19,13 @@ make 64
 wine target/x86_64-pc-windows-gnu/release/example.exe
 ```
 ### Пример
-Отредактируйте example_client.py, введите свои логи и пароль.
-
-Запустите сервер
+- Отредактируйте example_client.py, введите свои логин и пароль.
+- Скопируйте txmlconnect(64).dll в директорию с proxy.exe
+- Запустите сервер
 ```bash
 wine proxy.exe
 ```
-Запустите клиент
+- Запустите клиент
 ```bash
 python example_client.py
 ```
