@@ -1,6 +1,6 @@
 # txcProxy
 
-TCP/IP proxy-cервер для работы с библиотекой [TRANSAQ XML Connector](https://www.finam.ru/howtotrade/tconnector/) в *nix/wine.
+Многопользовательский TCP/IP proxy-cервер для работы с библиотекой [TRANSAQ XML Connector](https://www.finam.ru/howtotrade/tconnector/) в *nix/wine.
 
 ### Сборка
 ##### Кросс-компиляция и запуск под wine
