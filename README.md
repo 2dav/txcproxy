@@ -16,21 +16,21 @@ cargo build --release --target x86_64-pc-windows-gnu
 make 64
 ```
 ```bash
-wine target/x86_64-pc-windows-gnu/release/example.exe
+wine target/x86_64-pc-windows-gnu/release/txcproxy.exe
 ```
 ### Пример
 - Отредактируйте example_client.py, введите свои логин и пароль.
-- Скопируйте txmlconnect(64).dll в директорию с proxy.exe
+- Скопируйте txmlconnect(64).dll в директорию с txcproxy.exe
 - Запустите сервер
 ```bash
-wine proxy.exe
+wine txcproxy.exe
 ```
 - Запустите клиент
 ```bash
 python example_client.py
 ```
 ### Описание
-Команда запуска `wine proxy.exe [PORT]`. Значение `PORT` по-умолчанию 5555.
+Команда запуска `wine txcproxy.exe [PORT]`. Значение `PORT` по-умолчанию 5555.
 
 Для каждого подключения на основной порт(`command port`) сервер инициализирует экземпляр библиотеки, отправляет
 клиенту номер порта для приёма асинхронных сообщений коннектора(`data port`) и ожидает
