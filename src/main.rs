@@ -30,10 +30,10 @@ fn bind(port: u16) -> io::Result<TcpListener> {
     TcpListener::bind(SocketAddrV4::new(Ipv4Addr::new(127, 0, 0, 1), port))
 }
 
-fn bind_any() -> Option<(u16, TcpListener)> {
+fn bind_any() -> Option<TcpListener> {
     for port in 1025..65535 {
         if let Ok(listener) = bind(port) {
-            return Some((port, listener));
+            return Some(listener);
         }
     }
     None
@@ -59,18 +59,17 @@ fn init_lib(mut lib: LibTxc, id: u16, mut data_stream: TcpStream) -> io::Result<
 }
 
 fn handle_conn(mut cmd_stream: TcpStream) -> io::Result<()> {
-    let lib = bind_any()
-        .ok_or_else(last_os_error)
-        .and_then(|(data_port, listener)| {
-            // load here to fail early, in case
-            let lib = load_lib()?;
-            // send data port, wait for connection
-            let (ds, _) = cmd_stream
-                .write_all(&data_port.to_le_bytes())
-                .and_then(|_| listener.accept())?;
-            ds.shutdown(std::net::Shutdown::Read)?;
-            init_lib(lib, data_port, ds)
-        })?;
+    let lib = bind_any().ok_or_else(last_os_error).and_then(|listener| {
+        // load here to fail early, in case
+        let lib = load_lib()?;
+        // send data port, wait for connection
+        let data_port = listener.local_addr()?.port();
+        let (ds, _) = cmd_stream
+            .write_all(&data_port.to_le_bytes())
+            .and_then(|_| listener.accept())?;
+        ds.shutdown(std::net::Shutdown::Read)?;
+        init_lib(lib, data_port, ds)
+    })?;
 
     let mut reader = BufReader::new(cmd_stream.try_clone()?);
     let mut buff = Vec::with_capacity(1 << 20);
@@ -144,23 +143,17 @@ fn spawn_handler(stream: TcpStream) -> io::Result<()> {
 }
 
 fn server() -> io::Result<()> {
-    let mut control_port = 5555;
-    for arg in env::args().rev() {
-        if let Ok(p) = arg.parse::<u16>() {
-            control_port = p;
-            break;
-        }
-    }
+    let control_port = env::args()
+        .next_back()
+        .and_then(|p| p.parse().ok())
+        .unwrap_or(5555);
 
-    let (control_port, listener) = match bind(control_port) {
-        Ok(l) => Ok((control_port, l)),
-        Err(e) => {
-            eprintln!("127.0.0.1:{} bind error {}", control_port, e);
-            bind_any().ok_or_else(last_os_error)
-        }
-    }?;
+    let listener = bind(control_port).or_else(|err| {
+        eprintln!("127.0.0.1:{} bind error {}", control_port, err);
+        bind_any().ok_or_else(last_os_error)
+    })?;
 
-    println!("Сервер запущен на: {}", control_port);
+    println!("Сервер запущен на: {}", listener.local_addr()?.port());
     for conn in listener.incoming() {
         conn.and_then(spawn_handler)?;
     }
