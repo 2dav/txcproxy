@@ -114,15 +114,14 @@ fn handler() -> io::Result<()> {
 
 fn spawn_handler(stream: TcpStream) -> io::Result<()> {
     // fork
-    let cmd = env::current_exe()?;
-    let mut child = Command::new(cmd)
+    let mut proc = Command::new(env::current_exe()?)
         .env(TXC_PROXY_FORK_ENV, "")
         .current_dir(env::current_dir()?)
         .stdin(Stdio::piped())
         .stdout(Stdio::null())
         .spawn()?;
-    let pid = child.id();
-    let sin = child.stdin.as_mut().ok_or_else(last_os_error)?;
+    let pid = proc.id();
+    let sin = proc.stdin.as_mut().ok_or_else(last_os_error)?;
 
     // duplicate socket
     let raw_fd = stream.into_raw_socket();
