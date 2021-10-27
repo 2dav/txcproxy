@@ -85,20 +85,19 @@ fn handle_conn(mut cmd_stream: TcpStream) -> io::Result<()> {
 
 fn handler() -> io::Result<()> {
     // before using any winsock2 stuff it should be initialized(WSAStartup), let libstd handle this
-    drop(std::net::TcpListener::bind("255.255.255.255:0"));
+    drop(TcpListener::bind("255.255.255.255:0"));
 
     env::remove_var(TXC_PROXY_FORK_ENV);
     // read socket info from stdin
-    let mut buff = Vec::with_capacity(mem::size_of::<WSAPROTOCOL_INFOW>());
-    std::io::stdin().read_to_end(&mut buff)?;
+    let mut buff = [0u8; mem::size_of::<WSAPROTOCOL_INFOW>()];
+    io::stdin().read_exact(&mut buff)?;
     // reconstruct socket
     let stream: TcpStream = unsafe {
-        let pi: &mut WSAPROTOCOL_INFOW = &mut *(buff.as_ptr() as *mut WSAPROTOCOL_INFOW);
         let sock = WSASocketW(
             FROM_PROTOCOL_INFO,
             FROM_PROTOCOL_INFO,
             FROM_PROTOCOL_INFO,
-            pi,
+            &mut *(buff.as_ptr() as *mut WSAPROTOCOL_INFOW),
             0,
             WSA_FLAG_OVERLAPPED,
         );
