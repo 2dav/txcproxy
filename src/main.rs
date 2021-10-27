@@ -1,14 +1,12 @@
 use libtxc::{LibTxc, LogLevel};
-use std::io::Read;
-use std::os::windows::io::{FromRawSocket, IntoRawSocket, RawSocket};
-use std::process::{Command, Stdio};
 use std::{
     env,
-    io::{self, BufRead, BufReader, Write},
+    io::{self, BufRead, BufReader, Read, Write},
     mem,
     net::{Ipv4Addr, SocketAddrV4, TcpListener, TcpStream},
+    os::windows::io::{FromRawSocket, IntoRawSocket, RawSocket},
+    process::{Command, Stdio},
 };
-
 use winapi::um::winsock2::{
     closesocket, WSADuplicateSocketW, WSAGetLastError, WSASocketW, FROM_PROTOCOL_INFO,
     INVALID_SOCKET, SOCKET, WSAPROTOCOL_INFOW, WSA_FLAG_OVERLAPPED,
@@ -23,7 +21,7 @@ fn last_os_error() -> io::Error {
 }
 
 #[inline(always)]
-fn bind(port: u16) -> std::io::Result<TcpListener> {
+fn bind(port: u16) -> io::Result<TcpListener> {
     TcpListener::bind(SocketAddrV4::new(Ipv4Addr::new(127, 0, 0, 1), port))
 }
 
@@ -38,16 +36,16 @@ fn bind_any() -> Option<(u16, TcpListener)> {
 
 #[inline(always)]
 fn load_lib() -> io::Result<LibTxc> {
-    LibTxc::new(std::env::current_dir()?)
+    env::current_dir().and_then(LibTxc::new)
 }
 
 fn init_lib(mut lib: LibTxc, id: u16, mut data_stream: TcpStream) -> io::Result<LibTxc> {
-    let log_level: LogLevel = match std::env::var(TXC_PROXY_LOG_LEVEL) {
+    let log_level: LogLevel = match env::var(TXC_PROXY_LOG_LEVEL) {
         Ok(s) => s.parse::<u8>().unwrap_or(1).into(),
         _ => LogLevel::Minimum,
     };
 
-    let wd = std::env::current_dir()?;
+    let wd = env::current_dir()?;
     let log_dir = wd.join("sessions").join(id.to_string());
     std::fs::create_dir_all(log_dir.clone())?;
     lib.initialize(log_dir, log_level)?;
