@@ -44,32 +44,36 @@ fn load_lib() -> io::Result<LibTxc> {
     env::current_dir().and_then(LibTxc::new)
 }
 
-fn init_lib(mut lib: LibTxc, id: u16, mut data_stream: TcpStream) -> io::Result<LibTxc> {
+fn init_lib(lib: &mut LibTxc, id: u16, mut data_stream: TcpStream) -> io::Result<()> {
     let log_level: LogLevel = match env::var(TXC_PROXY_LOG_LEVEL) {
         Ok(s) => s.parse::<u8>().unwrap_or(1).into(),
         _ => LogLevel::Minimum,
     };
 
+    // create connector logs dir
     let wd = env::current_dir()?;
     let log_dir = wd.join("sessions").join(id.to_string());
     std::fs::create_dir_all(log_dir.clone())?;
+
     lib.initialize(log_dir, log_level)?;
     lib.set_callback(move |buff| data_stream.write_all(&*buff));
-    Ok(lib)
+    Ok(())
+}
+
+fn init_data_conn(stream: &mut TcpStream) -> io::Result<(u16, TcpStream)> {
+    // open data socket, send port to client, wait for connection
+    let listener = bind_any().ok_or_else(last_os_error)?;
+    let data_port = listener.local_addr()?.port();
+    stream.write_all(&data_port.to_le_bytes())?;
+    let (ds, _) = listener.accept()?;
+    ds.shutdown(std::net::Shutdown::Read)?;
+    Ok((data_port, ds))
 }
 
 fn handle_conn(mut cmd_stream: TcpStream) -> io::Result<()> {
-    let lib = bind_any().ok_or_else(last_os_error).and_then(|listener| {
-        // load here to fail early, in case
-        let lib = load_lib()?;
-        // send data port, wait for connection
-        let data_port = listener.local_addr()?.port();
-        let (ds, _) = cmd_stream
-            .write_all(&data_port.to_le_bytes())
-            .and_then(|_| listener.accept())?;
-        ds.shutdown(std::net::Shutdown::Read)?;
-        init_lib(lib, data_port, ds)
-    })?;
+    // load lib first to fail early, in case
+    let mut lib = load_lib()?;
+    init_data_conn(&mut cmd_stream).and_then(|(dp, tx)| init_lib(&mut lib, dp, tx))?;
 
     let mut reader = BufReader::new(cmd_stream.try_clone()?);
     let mut buff = Vec::with_capacity(1 << 20);
@@ -88,27 +92,24 @@ fn handle_conn(mut cmd_stream: TcpStream) -> io::Result<()> {
 fn handler() -> io::Result<()> {
     // before using any winsock2 stuff it should be initialized(WSAStartup), let libstd handle this
     drop(TcpListener::bind("255.255.255.255:0"));
-
-    env::remove_var(TXC_PROXY_FORK_ENV);
     // read socket info from stdin
     let mut buff = [0u8; mem::size_of::<WSAPROTOCOL_INFOW>()];
     io::stdin().read_exact(&mut buff)?;
     // reconstruct socket
-    let stream: TcpStream = unsafe {
-        let sock = WSASocketW(
+    unsafe {
+        match WSASocketW(
             FROM_PROTOCOL_INFO,
             FROM_PROTOCOL_INFO,
             FROM_PROTOCOL_INFO,
             &mut *(buff.as_ptr() as *mut WSAPROTOCOL_INFOW),
             0,
             WSA_FLAG_OVERLAPPED,
-        );
-        if sock == INVALID_SOCKET {
-            return Err(last_ws_error());
+        ) {
+            INVALID_SOCKET => Err(last_ws_error()),
+            socket => Ok(TcpStream::from_raw_socket(socket as RawSocket)),
         }
-        TcpStream::from_raw_socket(sock as RawSocket)
-    };
-    handle_conn(stream)
+    }
+    .and_then(handle_conn)
 }
 
 fn spawn_handler(stream: TcpStream) -> io::Result<()> {
@@ -126,8 +127,7 @@ fn spawn_handler(stream: TcpStream) -> io::Result<()> {
     let raw_fd = stream.into_raw_socket();
     let pl = unsafe {
         let mut pi: WSAPROTOCOL_INFOW = mem::zeroed();
-        let rv = WSADuplicateSocketW(raw_fd as SOCKET, pid, &mut pi);
-        if rv != 0 {
+        if WSADuplicateSocketW(raw_fd as SOCKET, pid, &mut pi) != 0 {
             return Err(last_ws_error());
         }
         std::slice::from_raw_parts(
@@ -162,6 +162,7 @@ fn server() -> io::Result<()> {
 
 pub fn main() -> io::Result<()> {
     if env::var(TXC_PROXY_FORK_ENV).is_ok() {
+        env::remove_var(TXC_PROXY_FORK_ENV);
         handler()
     } else {
         server()
