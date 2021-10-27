@@ -21,6 +21,11 @@ fn last_os_error() -> io::Error {
 }
 
 #[inline(always)]
+fn last_ws_error() -> io::Error {
+    unsafe { io::Error::from_raw_os_error(WSAGetLastError()) }
+}
+
+#[inline(always)]
 fn bind(port: u16) -> io::Result<TcpListener> {
     TcpListener::bind(SocketAddrV4::new(Ipv4Addr::new(127, 0, 0, 1), port))
 }
@@ -100,7 +105,7 @@ fn handler() -> io::Result<()> {
             WSA_FLAG_OVERLAPPED,
         );
         if sock == INVALID_SOCKET {
-            return Err(io::Error::from_raw_os_error(WSAGetLastError()));
+            return Err(last_ws_error());
         }
         TcpStream::from_raw_socket(sock as RawSocket)
     };
@@ -125,10 +130,7 @@ fn spawn_handler(stream: TcpStream) -> io::Result<()> {
         let mut pi: WSAPROTOCOL_INFOW = mem::zeroed();
         let rv = WSADuplicateSocketW(raw_fd as SOCKET, pid, &mut pi);
         if rv != 0 {
-            return Err(io::Error::new(
-                io::ErrorKind::Other,
-                format!("socket dup fail {}", rv),
-            ));
+            return Err(last_ws_error());
         }
         std::slice::from_raw_parts(
             mem::transmute::<_, *const u8>(&pi),
