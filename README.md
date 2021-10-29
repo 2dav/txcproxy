@@ -15,15 +15,12 @@ cargo build --release --target x86_64-pc-windows-gnu
 # или
 make 64
 ```
-```bash
-wine target/x86_64-pc-windows-gnu/release/txcproxy.exe
-```
 ### Пример
 - Отредактируйте example_client.py, введите свои логин и пароль.
 - Скопируйте txmlconnect(64).dll в директорию с txcproxy.exe
 - Запустите сервер
 ```bash
-wine txcproxy.exe
+wine target/x86_64-pc-windows-gnu/release/txcproxy.exe
 ```
 - Запустите клиент
 ```bash
