@@ -30,13 +30,13 @@ fn bind(port: u16) -> io::Result<TcpListener> {
     TcpListener::bind(SocketAddrV4::new(Ipv4Addr::new(127, 0, 0, 1), port))
 }
 
-fn bind_any() -> Option<TcpListener> {
+fn bind_any() -> io::Result<TcpListener> {
     for port in 1025..65535 {
         if let Ok(listener) = bind(port) {
-            return Some(listener);
+            return Ok(listener);
         }
     }
-    None
+    Err(last_os_error())
 }
 
 #[inline(always)]
@@ -61,10 +61,12 @@ fn init_lib(lib: &mut LibTxc, id: u16, mut data_stream: TcpStream) -> io::Result
 }
 
 fn init_data_conn(stream: &mut TcpStream) -> io::Result<(u16, TcpStream)> {
-    // open data socket, send port to client, wait for connection
-    let listener = bind_any().ok_or_else(last_os_error)?;
+    // open data socket
+    let listener = bind_any()?;
     let data_port = listener.local_addr()?.port();
+    // send data port to client
     stream.write_all(&data_port.to_le_bytes())?;
+    // wait for connection
     let (ds, _) = listener.accept()?;
     ds.shutdown(std::net::Shutdown::Read)?;
     Ok((data_port, ds))
@@ -150,7 +152,7 @@ fn server() -> io::Result<()> {
 
     let listener = bind(control_port).or_else(|err| {
         eprintln!("127.0.0.1:{} bind error {}", control_port, err);
-        bind_any().ok_or_else(last_os_error)
+        bind_any()
     })?;
 
     println!("Сервер запущен на: {}", listener.local_addr()?.port());
