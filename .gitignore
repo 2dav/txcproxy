@@ -1,3 +1,5 @@
 **/target/
 **/*.rk
 **/*.lock
+.cargo
+sessions/
