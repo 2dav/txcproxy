@@ -6,7 +6,7 @@ exclude = ["*.py"]
 
 [dependencies]
 winapi  = {version = "0.3.8", features = ["winsock2"]}
-libtxc = {git = "https://github.com/2dav/libtxc.git"}
+libtxc = "0.2"
 
 [profile.release]
 lto = "thin"
