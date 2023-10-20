@@ -1,12 +1,18 @@
 [package]
 name = "txcproxy"
-version = "0.2.0"
+version = "0.3.0"
+repository = "https://github.com/2dav/txcproxy"
+license = "Apache-2.0/MIT"
 edition = "2021"
-exclude = ["*.py"]
+exclude = ["/examples"]
 
 [dependencies]
-winapi  = {version = "0.3.8", features = ["winsock2"]}
-libtxc = "0.2"
+windows-sys = { version = "0.48", features = ["Win32_Foundation", "Win32_System_LibraryLoader", "Win32_System_Diagnostics_Debug", "Win32_Networking_WinSock"]}
+clap = {version = "4.4", features = ["derive", "env"]}
+anyhow = "1.0"
 
 [profile.release]
 lto = "thin"
+codegen-units = 1
+incremental = false
+strip = true

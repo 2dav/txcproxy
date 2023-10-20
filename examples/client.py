@@ -3,7 +3,7 @@ import socket
 from threading import Thread
 
 addr = socket.gethostbyname("127.0.0.1")
-port = 5555
+port = 4242
 
 connect_cmd = b"""<command id="connect">
   <login></login>
@@ -32,9 +32,10 @@ rcv.connect((addr, dp))
 def rcv_print_loop(rcv):
     while True:
         b = rcv.recv(1 << 20).decode()
-        if b == b'':
+        if len(b) == 0:
             break
-        print(b)
+        else:
+            print(b)
 
 Thread(target=rcv_print_loop, args=(rcv, )).start()
 

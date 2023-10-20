@@ -1,182 +1,51 @@
-use libtxc::{LogLevel, Stream, TransaqConnector};
-use std::{
-    env,
-    error::Error,
-    io::{self, BufRead, BufReader, Read, Write},
-    mem,
-    net::{Ipv4Addr, SocketAddrV4, TcpListener, TcpStream},
-    os::windows::io::{FromRawSocket, IntoRawSocket, RawSocket},
-    path::PathBuf,
-    process::{Command, Stdio},
-};
-use winapi::um::winsock2::{
-    closesocket, WSADuplicateSocketW, WSAGetLastError, WSASocketW, FROM_PROTOCOL_INFO,
-    INVALID_SOCKET, SOCKET, WSAPROTOCOL_INFOW, WSA_FLAG_OVERLAPPED,
+use anyhow::{self as ah, Context};
+use clap::Parser;
+use std::{net::IpAddr, path::PathBuf};
+use txcproxy::{
+    current_role, handler, master, read_handler_params, test_load_dll, test_write_log_dir, Role,
 };
 
-const TXC_PROXY_FORK_ENV: &str = "__TXC_PROXY_FORK";
-const TXC_PROXY_LOG_LEVEL: &str = "TXC_PROXY_LOG_LEVEL";
+///Transaq XML Connector Proxy Server
+#[derive(Parser)]
+#[command(author, version, about, long_about = None)]
+struct Cli {
+    /// Путь к библиотеке "Transaq XML Connector"
+    #[arg(short, long, value_name = "FILE", default_value = "./txmlconnector64.dll")]
+    dll: PathBuf,
 
-pub type Result<T = ()> = std::result::Result<T, Box<dyn Error>>;
+    /// Путь к директории для записи логов работы коннектора
+    #[arg(short, long, value_name = "FILE", default_value = "./sessions")]
+    logdir: PathBuf,
 
-#[inline(always)]
-fn last_os_error() -> io::Error {
-    io::Error::last_os_error()
+    /// Адрес для входящих подключений
+    #[arg(short, long, default_value_t = [127, 0, 0, 1].into())]
+    addr: IpAddr,
+
+    /// Порт для входящих подключений
+    #[arg(short, long, default_value_t = 4242)]
+    port: u16,
 }
 
-#[inline(always)]
-fn last_ws_error() -> io::Error {
-    unsafe { io::Error::from_raw_os_error(WSAGetLastError()) }
-}
+fn main() -> ah::Result<()> {
+    match current_role() {
+        Role::Master => {
+            let cli = Cli::parse();
 
-#[inline(always)]
-fn bind(port: u16) -> io::Result<TcpListener> {
-    TcpListener::bind(SocketAddrV4::new(Ipv4Addr::new(127, 0, 0, 1), port))
-}
+            // Try to catch two common sources of errors, do it here to fail
+            // early(before any client connects), in case.
+            test_load_dll(cli.dll.clone()).with_context(|| {
+                format!("Не удалось загрузить библиотеку {:?}", cli.dll.clone())
+            })?;
+            test_write_log_dir(cli.logdir.clone()).with_context(|| {
+                format!("Ошибка обращения к директории {:?}", cli.logdir.clone())
+            })?;
 
-fn bind_any() -> io::Result<TcpListener> {
-    for port in 1025..65535 {
-        if let Ok(listener) = bind(port) {
-            return Ok(listener);
+            master((cli.addr, cli.port), cli.logdir, cli.dll).context("Ошибка запуска сервера")
         }
-    }
-    Err(last_os_error())
-}
-
-fn lib_path() -> io::Result<PathBuf> {
-    let path = env::current_dir()?.join("txcn64.dll");
-    if path.exists() {
-        Ok(path)
-    } else {
-        let path = env::current_dir()?.join("txmlconnector64.dll");
-        if path.exists() {
-            Ok(path)
-        } else {
-            Err(io::Error::new(io::ErrorKind::NotFound, "library not found"))
-        }
-    }
-}
-
-fn log_dir(id: u16) -> Result<PathBuf> {
-    let wd = env::current_dir()?;
-    let log_dir = wd.join("sessions").join(id.to_string());
-    std::fs::create_dir_all(log_dir.clone())?;
-    Ok(log_dir)
-}
-
-fn log_level() -> LogLevel {
-    match env::var(TXC_PROXY_LOG_LEVEL) {
-        Ok(s) => (s.parse::<u8>().unwrap_or(1) as i32).into(),
-        _ => LogLevel::Minimum,
-    }
-}
-
-fn init_data_conn(stream: &mut TcpStream) -> Result<(u16, TcpStream)> {
-    // open data socket
-    let listener = bind_any()?;
-    let data_port = listener.local_addr()?.port();
-    // send data port to client
-    stream.write_all(&data_port.to_le_bytes())?;
-    // wait for connection
-    let (ds, _) = listener.accept()?;
-    ds.shutdown(std::net::Shutdown::Read)?;
-    Ok((data_port, ds))
-}
-
-fn handle_conn(mut cmd_stream: TcpStream) -> Result {
-    let (data_port, mut data_stream) = init_data_conn(&mut cmd_stream)?;
-    let mut txc = TransaqConnector::new(lib_path()?, log_dir(data_port)?, log_level())?;
-    let sender = txc.sender();
-    txc.input_stream().subscribe(move |buf| {
-        let _ = data_stream.write_all(buf.to_bytes());
-    });
-
-    let mut reader = BufReader::new(cmd_stream.try_clone()?);
-    let mut buff = Vec::with_capacity(1 << 20);
-
-    while !matches!(reader.read_until(b'\0', &mut buff), Ok(0) | Err(_)) {
-        match unsafe { sender.send(&buff) } {
-            Ok(resp) => cmd_stream.write_all(resp.to_bytes())?,
-            Err(e) => cmd_stream.write_all(e.to_string().as_bytes())?,
-        };
-        buff.clear();
-    }
-    Ok(())
-}
-
-fn handler() -> Result {
-    // before using any winsock2 stuff it should be initialized(WSAStartup), let libstd handle this
-    drop(TcpListener::bind("255.255.255.255:0"));
-    // read socket info from stdin
-    let mut buff = [0u8; mem::size_of::<WSAPROTOCOL_INFOW>()];
-    io::stdin().read_exact(&mut buff)?;
-    // reconstruct socket
-    let con = unsafe {
-        match WSASocketW(
-            FROM_PROTOCOL_INFO,
-            FROM_PROTOCOL_INFO,
-            FROM_PROTOCOL_INFO,
-            &mut *(buff.as_ptr() as *mut WSAPROTOCOL_INFOW),
-            0,
-            WSA_FLAG_OVERLAPPED,
-        ) {
-            INVALID_SOCKET => Err(last_ws_error()),
-            socket => Ok(TcpStream::from_raw_socket(socket as RawSocket)),
-        }
-    }?;
-    handle_conn(con)
-}
-
-fn spawn_handler(stream: TcpStream) -> Result {
-    // fork
-    let mut proc = Command::new(env::current_exe()?)
-        .env(TXC_PROXY_FORK_ENV, "")
-        .current_dir(env::current_dir()?)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::null())
-        .spawn()?;
-    let pid = proc.id();
-    let sin = proc.stdin.as_mut().ok_or_else(last_os_error)?;
-
-    // duplicate socket
-    let raw_fd = stream.into_raw_socket();
-    let pl = unsafe {
-        let mut pi: WSAPROTOCOL_INFOW = mem::zeroed();
-        if WSADuplicateSocketW(raw_fd as SOCKET, pid, &mut pi) != 0 {
-            return Err(last_ws_error())?;
-        }
-        std::slice::from_raw_parts(
-            mem::transmute::<_, *const u8>(&pi),
-            mem::size_of::<WSAPROTOCOL_INFOW>(),
-        )
-    };
-    // send socket info to child's stdin
-    sin.write_all(pl)?;
-    // finally close our copy of the socket
-    unsafe { closesocket(raw_fd as SOCKET) };
-    Ok(())
-}
-
-fn server() -> Result {
-    let control_port = env::args().next_back().and_then(|p| p.parse().ok()).unwrap_or(5555);
-
-    let listener = bind(control_port).or_else(|err| {
-        eprintln!("127.0.0.1:{} bind error {}", control_port, err);
-        bind_any()
-    })?;
-
-    println!("Сервер запущен на: {}", listener.local_addr()?.port());
-    for conn in listener.incoming() {
-        spawn_handler(conn?)?;
-    }
-    Ok(())
-}
-
-pub fn main() -> Result {
-    if env::var(TXC_PROXY_FORK_ENV).is_ok() {
-        env::remove_var(TXC_PROXY_FORK_ENV);
-        handler()
-    } else {
-        server()
+        Role::Handler => read_handler_params()
+            .context("Ошибка инициализации обработчика подключения")
+            .and_then(|(con, dll_path, log_dir)| {
+                handler(con, dll_path, log_dir).context("Ошибка обработки подключения")
+            }),
     }
 }
