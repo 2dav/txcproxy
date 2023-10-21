@@ -42,7 +42,7 @@ Options:
 Базовый пример использования, после подключения к серверу отправляет не требующую авторизации команду
 и ожидает ответ коннектора.
 
-> python examples/connect.py <LOGIN> <PASSWORD>
+> python examples/connect.py \<LOGIN\> \<PASSWORD\> 
 
 Пример подключения к серверу Transaq(требуются логин и пароль).
 
