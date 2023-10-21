@@ -40,7 +40,7 @@ jobs:
 
           dirname="$binary_name-${{ env.VERSION }}"
           mkdir "$dirname"
-          mv "target/release/$binary_name.exe" "$dirname"
+          mv "target/x86_64-pc-windows-msvc/release/$binary_name.exe" "$dirname"
 
           7z a "$dirname.zip" "$dirname"
           echo "ASSET=$dirname.zip" >> $GITHUB_ENV
