@@ -17,9 +17,9 @@ jobs:
       matrix:
         # You can add more, for any target you'd like!
         include:
-          - build: windows-gnu
+          - build: windows
             os: windows-latest
-            target: x86_64-pc-windows-gnu
+            target: x86_64-pc-windows-msvc
 
     steps:
       - name: Checkout
@@ -40,7 +40,7 @@ jobs:
       - name: Build
         uses: actions-rs/cargo@v1
         with:
-          use-cross: true
+          use-cross: false
           command: build
           args: --verbose --release --target ${{ matrix.target }}
 
@@ -48,7 +48,7 @@ jobs:
         shell: bash
         run: |
           # Replace with the name of your binary
-          binary_name="<BINARY_NAME>"
+          binary_name="txcproxy"
 
           dirname="$binary_name-${{ env.VERSION }}-${{ matrix.target }}"
           mkdir "$dirname"
