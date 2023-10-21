@@ -11,15 +11,7 @@ permissions:
 jobs:
   build-and-upload:
     name: Build and upload
-    runs-on: ${{ matrix.os }}
-
-    strategy:
-      matrix:
-        # You can add more, for any target you'd like!
-        include:
-          - build: windows
-            os: windows-latest
-            target: x86_64-pc-windows-msvc
+    runs-on: windows-latest 
 
     steps:
       - name: Checkout
@@ -30,42 +22,29 @@ jobs:
         run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
 
       - name: Install Rust
-        # Or @nightly if you want
         uses: dtolnay/rust-toolchain@stable
-        # Arguments to pass in
         with:
-          # Make Rust compile to our target (defined in the matrix)
-          targets: ${{ matrix.target }}
+          targets: x86_64-pc-windows-msvc
 
       - name: Build
         uses: actions-rs/cargo@v1
         with:
           use-cross: false
           command: build
-          args: --verbose --release --target ${{ matrix.target }}
+          args: --verbose --release --target x86_64-pc-windows-msvc
 
       - name: Build archive
         shell: bash
         run: |
-          # Replace with the name of your binary
           binary_name="txcproxy"
 
-          dirname="$binary_name-${{ env.VERSION }}-${{ matrix.target }}"
+          dirname="$binary_name-${{ env.VERSION }}"
           mkdir "$dirname"
-          if [ "${{ matrix.os }}" = "windows-latest" ]; then
-            mv "target/${{ matrix.target }}/release/$binary_name.exe" "$dirname"
-          else
-            mv "target/${{ matrix.target }}/release/$binary_name" "$dirname"
-          fi
+          mv "target/${{ matrix.target }}/release/$binary_name.exe" "$dirname"
 
-          if [ "${{ matrix.os }}" = "windows-latest" ]; then
-            7z a "$dirname.zip" "$dirname"
-            echo "ASSET=$dirname.zip" >> $GITHUB_ENV
-          else
-            tar -czf "$dirname.tar.gz" "$dirname"
-            echo "ASSET=$dirname.tar.gz" >> $GITHUB_ENV
-          fi
-
+          7z a "$dirname.zip" "$dirname"
+          echo "ASSET=$dirname.zip" >> $GITHUB_ENV
+         
       - name: Release
         uses: softprops/action-gh-release@v1
         with:
