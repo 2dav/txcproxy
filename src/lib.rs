@@ -38,13 +38,22 @@ pub fn test_load_dll(dll_path: std::path::PathBuf) -> ah::Result<libtxc::Module>
     unsafe { libtxc::Module::load(dll_path.clone()).map_err(Into::into) }
 }
 
-pub fn test_write_log_dir(mut log_dir: std::path::PathBuf) -> ah::Result<()> {
-    use std::fs;
-    // Create and delete a dummy file at `log_dir` to ensure the path do exists and is writable.
-    fs::create_dir_all(log_dir.clone())?;
-    log_dir.push("temp.file");
-    fs::write(log_dir.clone(), "temp")?;
-    fs::remove_file(log_dir).map_err(Into::into)
+pub fn test_write_log_dir(mut dir: std::path::PathBuf) -> ah::Result<()> {
+    if !dir.exists() {
+        ah::bail!("Путь {dir:?} не существует");
+    }
+    if !dir.is_dir() {
+        ah::bail!("{dir:?} не является директорией");
+    }
+    if dir.metadata().map_err(Into::<ah::Error>::into)?.permissions().readonly() {
+        ah::bail!("{dir:?} недоступна для записи");
+    }
+
+    dir.push("temp");
+    std::fs::write(dir.clone(), "temp.file")?;
+    std::fs::remove_file(dir)?;
+
+    Ok(())
 }
 
 pub fn txc_log_level() -> i32 {
@@ -67,7 +76,7 @@ pub fn read_handler_params() -> ah::Result<(TcpStream, PathBuf, PathBuf)> {
 
     match env::args().collect::<Vec<String>>().as_slice() {
         [.., log_dir, dll_path] => Ok((con, log_dir.into(), dll_path.into())),
-        _ => ah::bail!("the 'impossible' happened"), /*unreachable*/
+        _ => unreachable!("unexpected number of arguments"),
     }
 }
 
