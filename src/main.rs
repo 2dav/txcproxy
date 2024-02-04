@@ -44,8 +44,7 @@ fn main() -> ah::Result<()> {
         }
         Role::Handler => read_handler_params()
             .context("Ошибка инициализации обработчика подключения")
-            .and_then(|(con, dll_path, log_dir)| {
-                handler(con, dll_path, log_dir).context("Ошибка обработки подключения")
-            }),
+            .and_then(handler)
+            .context("Ошибка обработки подключения"),
     }
 }

@@ -6,7 +6,7 @@ pub use handler::handler;
 
 use std::{
     env, io,
-    net::{SocketAddr, TcpListener, TcpStream},
+    net::{IpAddr, SocketAddr, TcpListener, TcpStream},
     path::PathBuf,
     process::{Command, Stdio},
 };
@@ -64,8 +64,8 @@ pub fn txc_log_level() -> i32 {
     }
 }
 
-pub fn read_handler_params() -> ah::Result<(TcpStream, PathBuf, PathBuf)> {
-    // 'master' process ensures that the handler 'fork' is passed the 'dll_path' and 'log_dir'
+pub fn read_handler_params() -> ah::Result<(TcpStream, PathBuf, PathBuf, IpAddr)> {
+    // 'master' process ensures that the handler 'fork' is run with the 'dll_path', 'log_dir' and 'addr'
     // as positional arguments, and client socket handle is written to 'stdin'
 
     // init winsock2
@@ -75,7 +75,9 @@ pub fn read_handler_params() -> ah::Result<(TcpStream, PathBuf, PathBuf)> {
         .context("Не удалось получить дескриптор подключения через 'stdin'")?;
 
     match env::args().collect::<Vec<String>>().as_slice() {
-        [.., log_dir, dll_path] => Ok((con, log_dir.into(), dll_path.into())),
+        [.., log_dir, dll_path, addr] => {
+            Ok((con, log_dir.into(), dll_path.into(), addr.parse().expect("infallible")))
+        }
         _ => unreachable!("unexpected number of arguments"),
     }
 }
@@ -100,6 +102,7 @@ pub fn master<A: Into<SocketAddr>>(addr: A, log_dir: PathBuf, dll_path: PathBuf)
             .stdout(Stdio::null())
             .arg(dll_path.to_string_lossy().to_string())
             .arg(log_dir.to_string_lossy().to_string())
+            .arg(addr.ip().to_string())
             .spawn()
             .context("Ошибка запуска обработчика клиентcкого подключения")?;
 

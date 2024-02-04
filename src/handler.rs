@@ -27,10 +27,10 @@ fn init_txc(dll_path: PathBuf, log_dir: PathBuf) -> ah::Result<libtxc::Module> {
     Ok(lib)
 }
 
-fn init_upstream(con: &mut net::TcpStream) -> ah::Result<()> {
+fn init_upstream(con: &mut net::TcpStream, local_addr: net::IpAddr) -> ah::Result<()> {
     // open 'data' server
-    let (data_server, data_port) =
-        ws2::bind_any().context("Не удалось зарегистрировать сервер трансляции данных")?;
+    let (data_server, data_port) = ws2::bind_any(local_addr)
+        .context("Не удалось зарегистрировать сервер трансляции данных")?;
 
     // send 'data' server port to client and await for connection
     con.write_all(&data_port.to_ne_bytes())?;
@@ -42,8 +42,10 @@ fn init_upstream(con: &mut net::TcpStream) -> ah::Result<()> {
     Ok(())
 }
 
-pub fn handler(mut con: net::TcpStream, dll_path: PathBuf, log_dir: PathBuf) -> ah::Result<()> {
-    init_upstream(&mut con)?;
+pub fn handler(
+    (mut con, dll_path, log_dir, local_addr): (net::TcpStream, PathBuf, PathBuf, net::IpAddr),
+) -> ah::Result<()> {
+    init_upstream(&mut con, local_addr)?;
     let lib = init_txc(dll_path, log_dir)?;
 
     // loop

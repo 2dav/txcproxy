@@ -53,11 +53,10 @@ pub fn write_pinfo<W: Write>(mut writer: W, info: WSAPROTOCOL_INFOW) -> ah::Resu
     }
 }
 
-pub fn bind_any() -> io::Result<(net::TcpListener, u16)> {
+pub fn bind_any<A: Into<Option<net::IpAddr>>>(addr: A) -> io::Result<(net::TcpListener, u16)> {
+    let addr = addr.into().unwrap_or([127, 0, 0, 1].into());
     for port in 4243..65535 {
-        if let Ok(listener) =
-            net::TcpListener::bind(net::SocketAddrV4::new([127, 0, 0, 1].into(), port))
-        {
+        if let Ok(listener) = net::TcpListener::bind(net::SocketAddr::new(addr, port)) {
             return Ok((listener, port));
         }
     }
